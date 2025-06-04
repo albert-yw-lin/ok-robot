@@ -115,3 +115,140 @@ def visualize_path(path, end_xyz, cfg):
         visualizer.add_geometry(geometry)
     visualizer.run()
     visualizer.destroy_window()
+
+# def save_visualization_as_ply(path, end_xyz, cfg, save_dir=None):
+#     """
+#     Save the navigation visualization as PLY files for external viewing.
+#     Creates separate PLY files for point cloud, path, and markers that can be
+#     opened in MeshLab, CloudCompare, Blender, etc.
+    
+#     Args:
+#         path: Path waypoints (None for localization only)
+#         end_xyz: Target location coordinates
+#         cfg: Configuration object
+#         save_dir: Directory to save PLY files (default: cfg.save_file/A/)
+    
+#     Returns:
+#         List of saved file paths
+#     """
+    
+#     if not os.path.exists(cfg.pointcloud_path):
+#         print(f'\nNo {cfg.pointcloud_path} found, creating a new one.\n')
+#         from a_star.data_util import get_pointcloud, get_posed_rgbd_dataset
+#         get_pointcloud(get_posed_rgbd_dataset(key = 'r3d', path = cfg.dataset_path), cfg.pointcloud_path)
+#         print(f'\n{cfg.pointcloud_path} created.\n')
+
+#     # Set up save directory
+#     if save_dir is None:
+#         save_dir = f"{cfg.save_file}/ply_exports"
+#     os.makedirs(save_dir, exist_ok=True)
+    
+#     saved_files = []
+    
+#     # Skip saving separate environment point cloud - we'll include it in the combined scene
+#     # 1. Load point cloud for combining with markers
+#     point_cloud = o3d.io.read_point_cloud(cfg.pointcloud_path)
+    
+#     # 2. Create and save target marker (red sphere)
+#     end_point = np.array(end_xyz.numpy())
+#     end_point[2] = (cfg.min_height + cfg.max_height)/2
+    
+#     end_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+#     end_sphere.translate(end_point)
+#     end_sphere.paint_uniform_color([1, 0, 0])  # Red target
+    
+#     target_path = f"{save_dir}/target_marker.ply"
+#     o3d.io.write_triangle_mesh(target_path, end_sphere)
+#     saved_files.append(target_path)
+#     print(f"Target marker saved: {target_path}")
+    
+#     # 3. Save path and start marker if path exists
+#     if path is not None:
+#         path_array = np.array(np.array(path).tolist())
+#         start_point = path_array[0, :]
+        
+#         # Create start marker (green sphere)
+#         start_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.05)
+#         start_sphere.translate(start_point)
+#         start_sphere.paint_uniform_color([0, 1, 0])  # Green start
+        
+#         start_path = f"{save_dir}/start_marker.ply"
+#         o3d.io.write_triangle_mesh(start_path, start_sphere)
+#         saved_files.append(start_path)
+#         print(f"Start marker saved: {start_path}")
+        
+#         # Create path visualization (blue cylinders)
+#         path_array[:, 2] = cfg.min_height
+#         path_geometries = create_dashed_cylinder_line(path_array)
+        
+#         # Combine all path geometries into one mesh
+#         combined_path = o3d.geometry.TriangleMesh()
+#         for geom in path_geometries:
+#             combined_path += geom
+        
+#         path_viz_path = f"{save_dir}/navigation_path.ply"
+#         o3d.io.write_triangle_mesh(path_viz_path, combined_path)
+#         saved_files.append(path_viz_path)
+#         print(f"Navigation path saved: {path_viz_path}")
+        
+#         # Create combined scene file
+#         combined_scene = point_cloud
+#         # Add markers as point clouds for the combined file
+#         target_points = np.asarray(end_sphere.vertices) + end_point
+#         start_points = np.asarray(start_sphere.vertices) + start_point
+        
+#         # Create point clouds from sphere vertices for combined scene
+#         target_pcd = o3d.geometry.PointCloud()
+#         target_pcd.points = o3d.utility.Vector3dVector(target_points)
+#         target_pcd.paint_uniform_color([1, 0, 0])
+        
+#         start_pcd = o3d.geometry.PointCloud()
+#         start_pcd.points = o3d.utility.Vector3dVector(start_points)
+#         start_pcd.paint_uniform_color([0, 1, 0])
+        
+#         # Combine everything
+#         combined_scene += target_pcd
+#         combined_scene += start_pcd
+        
+#         combined_path = f"{save_dir}/complete_scene.ply"
+#         o3d.io.write_point_cloud(combined_path, combined_scene)
+#         saved_files.append(combined_path)
+#         print(f"Complete scene saved: {combined_path}")
+        
+#     else:
+#         # No path - save target only scene
+#         target_points = np.asarray(end_sphere.vertices) + end_point
+#         target_pcd = o3d.geometry.PointCloud()
+#         target_pcd.points = o3d.utility.Vector3dVector(target_points)
+#         target_pcd.paint_uniform_color([1, 0, 0])
+        
+#         localization_scene = point_cloud + target_pcd
+#         localization_path = f"{save_dir}/localization_scene.ply"
+#         o3d.io.write_point_cloud(localization_path, localization_scene)
+#         saved_files.append(localization_path)
+#         print(f"Localization scene saved: {localization_path}")
+    
+#     # Create instruction file
+#     instructions_path = f"{save_dir}/README.txt"
+#     with open(instructions_path, 'w') as f:
+#         f.write("Navigation Visualization PLY Files\n")
+#         f.write("==================================\n\n")
+#         f.write("These files can be opened in:\n")
+#         f.write("- MeshLab (free): https://www.meshlab.net/\n")
+#         f.write("- CloudCompare (free): https://www.cloudcompare.org/\n")
+#         f.write("- Blender (free): https://www.blender.org/\n\n")
+#         f.write("File descriptions:\n")
+#         f.write("- target_marker.ply: Red sphere showing target location\n")
+#         if path is not None:
+#             f.write("- start_marker.ply: Green sphere showing start position\n")
+#             f.write("- navigation_path.ply: Blue path from start to target\n")
+#             f.write("- complete_scene.ply: Environment + markers + path combined\n")
+#             f.write("\nRecommended: Open complete_scene.ply for full navigation view\n")
+#         else:
+#             f.write("- localization_scene.ply: Environment + target combined\n")
+#             f.write("\nRecommended: Open localization_scene.ply for full view\n")
+#     saved_files.append(instructions_path)
+    
+#     print(f"\n✅ All PLY files saved to: {save_dir}")
+#     print(f"📖 Instructions saved to: {instructions_path}")
+#     return saved_files

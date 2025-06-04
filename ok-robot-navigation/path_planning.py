@@ -140,8 +140,37 @@ def main(cfg):
             B = input("B: ")
             end_xyz = localizer.localize_AonB(A, B)
             end_xy = end_xyz[:2]
+
+            ##############################################################
+            # Add fake starting position for path planning in debug mode #
+            ##############################################################
+            
+            # Use fake starting position for path planning in debug mode
+            fake_start_x = cfg.get('fake_start_x', 0.0)
+            fake_start_y = cfg.get('fake_start_y', 0.0) 
+            fake_start_theta = cfg.get('fake_start_theta', 0.0)
+            start_xyt = np.array([fake_start_x, fake_start_y, fake_start_theta])
+            print(f"Using simulated robot position: {start_xyt}")
+            try:
+                paths = planner.plan(
+                    start_xy=start_xyt[:2], end_xy=end_xy, remove_line_of_sight_points=True
+                )
+            except:
+                # Sometimes, start_xyt might be an occupied obstacle point, in this case, A* is going to throw an error
+                # In this case, we will throw an error and still visualize
+                print(
+                    'A* planner said that your robot stands on an occupied point,\n\
+                    it might be either your hector slam is not tracking robot current position,\n\
+                    or your min_height or max_height is set to incorrect value so obstacle map is not accurate!'
+                )
+                paths = None
+
+            #################################################################
+            # End of fake starting position for path planning in debug mode #
+            #################################################################
+
             if cfg.pointcloud_visualization:
-                visualize_path(None, end_xyz, cfg)
+                visualize_path(paths, end_xyz, cfg) # NOTE: path is None in the original code
         else:
             print("Waiting for the data from Robot")
             start_xyt = recv_array(socket)
@@ -171,6 +200,10 @@ def main(cfg):
                 paths = None
             if cfg.pointcloud_visualization:
                 visualize_path(paths, end_xyz, cfg)
+            
+            # # Always save PLY files for external viewing
+            # save_dir = f"{cfg.save_file}/{A}/ply_exports" if A else f"{cfg.save_file}/ply_exports"
+            # save_visualization_as_ply(paths, end_xyz, cfg, save_dir)
             end_pt = planner.a_star_planner.to_pt(paths[-1][:2])
             theta = paths[-1][2] if paths[-1][2] > 0 else paths[-1][2] + 2 * np.pi
 
@@ -187,31 +220,59 @@ def main(cfg):
 
         # Draw on obstacle map used for path planning
         axes[0].imshow(obstacle_map.grid[::-1], extent=(minx, maxx, miny, maxy))
-        if not cfg.debug and paths:
+        #################################################################
+        ###########################
+        # Original plotting logic #
+        ###########################
+        # if not cfg.debug and paths:
+        #     axes[0].plot(xs, ys, c="r")
+        #     axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
+        #     axes[0].scatter(xs, ys, c="cyan", s=10)
+        #     axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+        # elif not cfg.debug:
+        #     # This means that we have start_xyt and tried path planning, yet path planning failed.
+        #     # For debugging purpose, we will draw start_xyt and end_xyt
+        #     axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
+        #     axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+        # else:
+        #     axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+
+        # # Draw on ground truth obstacle map
+        # axes[1].imshow(ground_truth_map.grid[::-1], extent=(minx, maxx, miny, maxy))
+        # if not cfg.debug and paths:
+        #     axes[1].plot(xs, ys, c="r")
+        #     axes[1].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
+        #     axes[1].scatter(xs, ys, c="cyan", s=10)
+        #     axes[1].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+        # elif not cfg.debug:
+        #     axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
+        #     axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+        # else:
+        #     axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+
+        ###########################
+        # Modified plotting logic #
+        ###########################
+        if paths:
             axes[0].plot(xs, ys, c="r")
             axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
             axes[0].scatter(xs, ys, c="cyan", s=10)
             axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
-        elif not cfg.debug:
-            # This means that we have start_xyt and tried path planning, yet path planning failed.
-            # For debugging purpose, we will draw start_xyt and end_xyt
+        else:
             axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
             axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
-        else:
-            axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
-
+        
         # Draw on ground truth obstacle map
         axes[1].imshow(ground_truth_map.grid[::-1], extent=(minx, maxx, miny, maxy))
-        if not cfg.debug and paths:
+        if paths:
             axes[1].plot(xs, ys, c="r")
             axes[1].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
             axes[1].scatter(xs, ys, c="cyan", s=10)
             axes[1].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
-        elif not cfg.debug:
-            axes[0].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
-            axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
         else:
-            axes[0].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+            axes[1].scatter(start_xyt[0], start_xyt[1], s=50, c="white")
+            axes[1].scatter(end_xyz[0], end_xyz[1], s=50, c="g")
+        #################################################################
 
         if not os.path.exists(cfg.save_file + "/" + A):
             os.makedirs(cfg.save_file + "/" + A)
