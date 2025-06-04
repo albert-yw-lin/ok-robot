@@ -48,9 +48,9 @@ dependencies:
     - zmq
 
     # grasping
-    - protobuf==3.19.0
-    - git+https://github.com/pccws/MinkowskiEngine
-    - git+https://github.com/luca-medeiros/lang-segment-anything.git
+    # - protobuf==3.19.0
+    # - git+https://github.com/pccws/MinkowskiEngine
+    # - git+https://github.com/luca-medeiros/lang-segment-anything.git
 
 
 
