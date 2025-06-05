@@ -1,6 +1,7 @@
 import hydra
 import math
 from pathlib import Path
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -102,6 +103,28 @@ def load_dataset(cfg):
     return semantic_memory
 
 
+def get_random_valid_point(obstacle_map):
+    """Get a random valid (unoccupied) point from the obstacle map."""
+    # Get the grid and convert to numpy array
+    grid = obstacle_map.grid
+    # Find all unoccupied points (where grid is False)
+    valid_points = np.where(grid == -2) # HACK: for some reason, the grid is -2 for unoccupied points
+    if len(valid_points[0]) == 0:
+        raise ValueError("No valid points found in the obstacle map!")
+    
+    # Randomly select one of the valid points
+    idx = random.randint(0, len(valid_points[0]) - 1)
+    y, x = valid_points[0][idx], valid_points[1][idx]
+    
+    # Convert grid coordinates to world coordinates
+    minx, miny = obstacle_map.origin
+    resolution = obstacle_map.resolution
+    world_x = minx + x * resolution
+    world_y = miny + y * resolution
+    
+    return np.array([world_x, world_y, 0.0])  # Return with theta=0
+
+
 @hydra.main(version_base="1.2", config_path="configs", config_name="path.yaml")
 def main(cfg):
     cfg = OmegaConf.structured(OmegaConf.to_yaml(cfg))
@@ -145,12 +168,10 @@ def main(cfg):
             # Add fake starting position for path planning in debug mode #
             ##############################################################
             
-            # Use fake starting position for path planning in debug mode
-            fake_start_x = cfg.get('fake_start_x', 0.0)
-            fake_start_y = cfg.get('fake_start_y', 0.0) 
-            fake_start_theta = cfg.get('fake_start_theta', 0.0)
-            start_xyt = np.array([fake_start_x, fake_start_y, fake_start_theta])
-            print(f"Using simulated robot position: {start_xyt}")
+            # Get a random valid starting position
+            start_xyt = get_random_valid_point(obstacle_map)
+            print(f"Using random valid robot position: {start_xyt}")
+
             try:
                 paths = planner.plan(
                     start_xy=start_xyt[:2], end_xy=end_xy, remove_line_of_sight_points=True
@@ -215,8 +236,9 @@ def main(cfg):
         fig, axes = plt.subplots(2, 1, figsize=(8, 8))
 
         # Draw paths only when path planning is done successfully
-        if not cfg.debug and paths:
-            xs, ys, thetas = zip(*paths)
+        # if not cfg.debug and paths: # Original plotting logic
+        #     xs, ys, thetas = zip(*paths)
+        xs, ys, thetas = zip(*paths) # Modified plotting logic
 
         # Draw on obstacle map used for path planning
         axes[0].imshow(obstacle_map.grid[::-1], extent=(minx, maxx, miny, maxy))
