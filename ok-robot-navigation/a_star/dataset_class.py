@@ -308,3 +308,135 @@ class R3DDataset(Dataset[PosedRGBDItem]):
 
         item = PosedRGBDItem(image=img, depth=depth, mask=mask, intrinsics=intr, pose=pose)
         return item
+
+
+class SimulationDataset(Dataset[PosedRGBDItem]):
+    def __init__(self, path: str, use_depth_shape: bool = True) -> None:
+        """Defines a dataset for iterating samples from simulation data.
+        
+        Expected data structure:
+        path/
+        ├── metadata.json  # Contains camera intrinsics and settings
+        ├── rgb/
+        │   ├── 000000.jpg
+        │   ├── 000001.jpg
+        │   └── ...
+        ├── depth/
+        │   ├── 000000.npy  # or .png
+        │   ├── 000001.npy
+        │   └── ...
+        └── poses/
+            ├── 000000.npy  # 4x4 transformation matrices
+            ├── 000001.npy
+            └── ...
+        
+        Args:
+            path: The path to the simulation data directory
+            use_depth_shape: Not used for simulation data but kept for interface compatibility
+        """
+        import json
+        from PIL import Image
+        
+        self.data_path = Path(path)
+        self.use_depth_shape = use_depth_shape
+        
+        # Load metadata
+        metadata_path = self.data_path / "metadata.json"
+        if not metadata_path.exists():
+            raise FileNotFoundError(f"Metadata file not found at {metadata_path}")
+            
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        # Extract camera parameters
+        self.rgb_width = metadata["image_width"]
+        self.rgb_height = metadata["image_height"]
+        
+        # Camera intrinsics matrix (3x3)
+        if "camera_matrix" in metadata:
+            self.intrinsics = np.array(metadata["camera_matrix"], dtype=np.float64)
+        else:
+            # If individual parameters are provided
+            fx = metadata["fx"]
+            fy = metadata["fy"] 
+            cx = metadata["cx"]
+            cy = metadata["cy"]
+            self.intrinsics = np.array([
+                [fx, 0, cx],
+                [0, fy, cy],
+                [0, 0, 1]
+            ], dtype=np.float64)
+        
+        # Get sorted file lists
+        rgb_dir = self.data_path / "rgb"
+        depth_dir = self.data_path / "depth"
+        poses_dir = self.data_path / "poses"
+        
+        self.rgb_files = sorted(list(rgb_dir.glob("*.jpg")) + list(rgb_dir.glob("*.png")))
+        self.depth_files = sorted(list(depth_dir.glob("*.npy")) + list(depth_dir.glob("*.png")))
+        
+        # Load poses if available
+        pose_files = sorted(list(poses_dir.glob("*.npy"))) if poses_dir.exists() else []
+        
+        self.poses = []
+        for pose_file in pose_files:
+            pose = np.load(pose_file)
+            self.poses.append(pose)
+        self.poses = np.stack(self.poses)
+        
+        assert len(self.rgb_files) == len(self.depth_files), f"RGB and depth file counts don't match: {len(self.rgb_files)} vs {len(self.depth_files)}"
+        
+        # Depth scale factor (simulation depths are usually in meters)
+        # NOTE: hardcoded for maniskill3 simulation env
+        self.depth_scale = 1000.0
+        
+        # Apply coordinate system transformation for consistency with pipeline
+        # Convert Y→-Y, Z→-Z to match expected coordinate system
+        affine_matrix = np.array(
+            [
+                [1, 0, 0, 0],
+                [0, -1, 0, 0],
+                [0, 0, -1, 0],
+                [0, 0, 0, 1],
+            ]
+        )
+        self.poses = self.poses @ affine_matrix
+        
+    def __len__(self) -> int:
+        return len(self.rgb_files)
+    
+    def __getitem__(self, index: int) -> PosedRGBDItem:
+        # Load RGB image
+        rgb_img = np.array(Image.open(self.rgb_files[index]))
+        if rgb_img.dtype != np.uint8:
+            rgb_img = (rgb_img * 255).astype(np.uint8)
+        
+        # Convert to tensor format (C, H, W)
+        img = torch.from_numpy(rgb_img).permute(2, 0, 1)
+        img = V.convert_image_dtype(img, torch.float32)
+        
+        # Load depth image
+        depth_file = self.depth_files[index]
+        if depth_file.suffix == '.npy':
+            depth_img = np.load(depth_file).astype(np.float32)
+        else:  # PNG depth
+            depth_img = np.array(Image.open(depth_file)).astype(np.float32)
+        if depth_img.max() > 10:  # Likely in mm, convert to meters
+            depth_img = depth_img / self.depth_scale
+        
+        # Handle 2D vs 3D depth arrays
+        if depth_img.ndim == 3:
+            depth_img = depth_img[:, :, 0]  # Take first channel
+        
+        depth = torch.from_numpy(depth_img).unsqueeze(0)  # Add channel dimension
+        
+        # Create mask (for simulation, assume all depth > 0 is valid)
+        mask = torch.from_numpy(depth_img <= 0.0).unsqueeze(0)
+        
+        # Get camera intrinsics and pose
+        intr = torch.from_numpy(self.intrinsics)
+        pose = torch.from_numpy(self.poses[index])
+        
+        
+        item = PosedRGBDItem(image=img, depth=depth, mask=mask, intrinsics=intr, pose=pose)
+        return item

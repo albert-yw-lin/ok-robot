@@ -182,7 +182,27 @@ class OWLViTLabelledDataset(Dataset):
         ):
             rgb = einops.rearrange(data_dict["rgb"][..., :3], "b h w c -> b c h w")
             xyz = data_dict["xyz_position"]
+            
+            # # Debug: Print coordinate information
+            # if idx == 0:  # Only print for first batch
+            #     print(f"Debug: xyz shape: {xyz.shape}")
+            #     print(f"Debug: xyz type: {type(xyz)}")
+            #     if hasattr(xyz, 'numel') and xyz.numel() > 0:
+            #         print(f"Debug: xyz min/max: {xyz.min():.4f}/{xyz.max():.4f}")
+            #     else:
+            #         print(f"Debug: xyz is empty!")
+            #         if "depth" in data_dict:
+            #             depth = data_dict["depth"]
+            #             print(f"Debug: depth shape: {depth.shape}")
+            #             if hasattr(depth, 'numel') and depth.numel() > 0:
+            #                 print(f"Debug: depth min/max: {depth.min():.4f}/{depth.max():.4f}")
+            
             for image, coordinates in zip(rgb, xyz):
+                # Skip if coordinates are empty
+                if coordinates.numel() == 0:
+                    print(f"Warning: Empty coordinates for frame {idx}, skipping...")
+                    continue
+                    
                 # Now calculate the OWL-ViT detection for this.
                 target_sizes = torch.Tensor([image[0].size()])
                 inputs = self._processor(text=self._all_classes, images=image, return_tensors="pt")
@@ -235,7 +255,7 @@ class OWLViTLabelledDataset(Dataset):
                         segmentation_color_map[mask.detach().cpu().numpy()] = [0, 255, 0]
                     image_vis = cv2.addWeighted(image_vis, 0.7, segmentation_color_map, 0.3, 0)
                     cv2.imwrite(str(self._visualization_path / f"{idx}.jpg"), image_vis)
-
+                
                 for pred_class, pred_box, pred_score, feature, pred_mask in zip(
                     labels.cpu(),
                     boxes.cpu(),
@@ -243,6 +263,7 @@ class OWLViTLabelledDataset(Dataset):
                     features.cpu(),
                     masks.cpu(),
                 ):
+                    
                     img_h, img_w = target_sizes.unbind(1)
                     real_mask = pred_mask[valid_mask]
                     real_mask_rect = valid_mask & pred_mask
@@ -275,7 +296,7 @@ class OWLViTLabelledDataset(Dataset):
 
     def _reshape_coordinates_and_get_valid(self, coordinates, data_dict):
         if "conf" in data_dict:
-            # Real world data, find valid mask
+            # Real world data (Record3D), find valid mask using confidence
             valid_mask = (
                 torch.as_tensor(
                     (~np.isnan(data_dict["depth"]) & (data_dict["conf"] == 2))
@@ -287,8 +308,22 @@ class OWLViTLabelledDataset(Dataset):
             reshaped_coordinates = torch.as_tensor(coordinates)
             return reshaped_coordinates, valid_mask
         else:
-            reshaped_coordinates = einops.rearrange(coordinates, "c h w -> (h w) c")
-            valid_mask = torch.ones_like(coordinates).mean(dim=0).bool()
+            # reshaped_coordinates = einops.rearrange(coordinates, "c h w -> (h w) c")
+            # valid_mask = torch.ones_like(coordinates).mean(dim=0).bool()
+            
+            depth = data_dict["depth"]
+            if isinstance(depth, torch.Tensor):
+                depth_np = depth.squeeze().numpy()
+            else:
+                depth_np = np.array(depth).squeeze()
+            
+            # Create 2D valid mask - Open3D filters out: NaN, inf, and non-positive values
+            valid_mask_2d = ~(np.isnan(depth_np) | (depth_np <= 0.0) | (depth_np >= 3000.0))
+            valid_mask = torch.as_tensor(valid_mask_2d).bool()
+
+            # Coordinates are already filtered and flattened by Open3D
+            reshaped_coordinates = torch.as_tensor(coordinates)
+            
             return reshaped_coordinates, valid_mask
 
     def __getitem__(self, idx):
@@ -307,7 +342,8 @@ class OWLViTLabelledDataset(Dataset):
     def process_text(x: str) -> str:
         return x.replace("-", " ").replace("_", " ").lstrip().rstrip().lower()
     
-    def _setup_owl_all_classes(self, view_data: R3DSemanticDataset):
+    # def _setup_owl_all_classes(self, view_data: R3DSemanticDataset):
+    def _setup_owl_all_classes(self, view_data):
         # Unifying all the class labels. 
         prebuilt_class_names = [
             OWLViTLabelledDataset.process_text(x)

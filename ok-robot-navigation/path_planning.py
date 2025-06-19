@@ -40,6 +40,7 @@ sys.path.append("voxel_map")
 
 from dataloaders import (
     R3DSemanticDataset,
+    SimulationSemanticDataset,
     OWLViTLabelledDataset,
 )
 
@@ -71,6 +72,25 @@ def recv_array(socket, flags=0, copy=True, track=False):
     return A.reshape(md["shape"])
 
 
+def detect_data_type(dataset_path):
+    """Auto-detect data type based on path structure."""
+    dataset_path = Path(dataset_path)
+    
+    if dataset_path.suffix == ".r3d":
+        return "r3d"
+    elif dataset_path.is_dir():
+        # Check if it has simulation data structure
+        metadata_file = dataset_path / "metadata.json"
+        rgb_dir = dataset_path / "rgb"
+        depth_dir = dataset_path / "depth"
+        
+        if metadata_file.exists() and rgb_dir.exists() and depth_dir.exists():
+            return "simulation"
+    
+    # Default to r3d if unsure
+    return "r3d"
+
+
 def load_dataset(cfg):
     if os.path.exists(cfg.cache_path):
         if (
@@ -81,14 +101,30 @@ def load_dataset(cfg):
         ):
             print("\n\nSemantic memory ready!\n\n")
             return torch.load(cfg.cache_path)
-    print(
-        "\n\nFetching semantic memory from record3D file, might take some time ....\n\n"
-    )
-    r3d_dataset = R3DSemanticDataset(
-        cfg.dataset_path, cfg.custom_labels, subsample_freq=cfg.sample_freq
-    )
+    
+    # Determine data type
+    data_type = cfg.data_type
+    if data_type == "auto":
+        data_type = detect_data_type(cfg.dataset_path)
+        print(f"Auto-detected data type: {data_type}")
+    
+    # Load appropriate dataset
+    if data_type == "r3d":
+        print("\n\nFetching semantic memory from Record3D file, might take some time ....\n\n")
+        base_dataset = R3DSemanticDataset(
+            cfg.dataset_path, cfg.custom_labels, subsample_freq=cfg.sample_freq
+        )
+    elif data_type == "simulation":
+        print("\n\nFetching semantic memory from simulation data, might take some time ....\n\n")
+        base_dataset = SimulationSemanticDataset(
+            cfg.dataset_path, cfg.custom_labels, subsample_freq=cfg.sample_freq
+        )
+    
+    else:
+        raise ValueError(f"Unsupported data type: {data_type}. Use 'r3d', 'simulation', or 'auto'")
+    
     semantic_memory = OWLViTLabelledDataset(
-        r3d_dataset,
+        base_dataset,
         owl_model_name=cfg.web_models.owl,
         sam_model_type=cfg.web_models.sam,
         device=cfg.memory_load_device,
@@ -111,6 +147,12 @@ def main(cfg):
     conservative = cfg.map_type == "conservative_vlmap"
     # ceil height is set to floor height+1.5, as objects higher than that will not obstruct robots anymore 
     cfg.max_height = cfg.min_height + 1.5
+    
+    # Determine data type for PathPlanner
+    data_type = cfg.data_type
+    if data_type == "auto":
+        data_type = detect_data_type(cfg.dataset_path)
+    
     planner = PathPlanner(
         cfg.dataset_path,
         cfg.min_height,
@@ -118,6 +160,7 @@ def main(cfg):
         cfg.resolution,
         cfg.occ_avoid_radius,
         conservative,
+        data_type=data_type,  # Pass data type to PathPlanner
     )
     localizer = VoxelMapLocalizer(
         semantic_memory,
@@ -141,7 +184,7 @@ def main(cfg):
             end_xyz = localizer.localize_AonB(A, B)
             end_xy = end_xyz[:2]
             if cfg.pointcloud_visualization:
-                visualize_path(None, end_xyz, cfg)
+                visualize_path(None, end_xyz, cfg, data_type)
         else:
             print("Waiting for the data from Robot")
             start_xyt = recv_array(socket)
@@ -170,7 +213,7 @@ def main(cfg):
                 )
                 paths = None
             if cfg.pointcloud_visualization:
-                visualize_path(paths, end_xyz, cfg)
+                visualize_path(paths, end_xyz, cfg, data_type)
             end_pt = planner.a_star_planner.to_pt(paths[-1][:2])
             theta = paths[-1][2] if paths[-1][2] > 0 else paths[-1][2] + 2 * np.pi
 

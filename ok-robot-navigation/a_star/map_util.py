@@ -35,6 +35,7 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
 
 from a_star.data_util import get_bounds, get_poses, iter_xyz
 from a_star.dataset_class import PosedRGBDItem
@@ -166,7 +167,7 @@ def get_occupancy_map_from_dataset(
             occ_map = (counts >= occ_threshold)
             occ_map_copy = occ_map.cpu().numpy().copy()
 
-            for i in range(occ_map.shape[0]):
+            for i in tqdm(range(occ_map.shape[0]), desc="Processing occupancy map"):
                 for j in range(occ_map.shape[1]):
                     if occ_map_copy[i, j]:
                         occ_map[max(0, i - occ_avoid): min(occ_map.shape[0] - 1, i + occ_avoid), max(0, j - occ_avoid): min(occ_map.shape[1] - 1, j + occ_avoid)] = -1

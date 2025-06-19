@@ -1,9 +1,9 @@
+# Example configuration for using simulation data instead of R3D data
 # debug=True: generate localization result for each text query; debug=False: communicate with robots and send planned path to robots
 debug: True
 
-# Data type: "r3d" for Record3D data (.r3d files), "simulation" for simulation data (directories with rgb/depth/poses)
-# Will auto-detect based on path if not specified
-data_type: "auto"  # "r3d", "simulation", or "auto"
+# Data type: "simulation" for simulation data (directories with rgb/depth/poses)
+data_type: "simulation"
 
 #"conservative_vlmap" (space not scanned is non-navigable) "brave_vlmap" (sapce scanned is navigable, used when you forget to scan the floor)
 map_type: "conservative_vlmap" # "conservative_vlmap" "brave_vlmap"
@@ -21,7 +21,7 @@ port_number: 5555
 save_file: "./test"
 
 # min (floor) and max (ceil) height for building obstalce map
-min_height: -0.8
+min_height: 0.0
 # max_height = min_height + 1.5 (check path_planning.py for more details)
 
 # We provide very-easy-to-understand navigation visualization in a pointcloud opened in open3d, nevertheless
@@ -31,11 +31,11 @@ min_height: -0.8
 pointcloud_visualization: True
 
 # Parameters needed for loading semantic memory
-cache_path: 'sample.pt'
-pointcloud_path: 'pointcloud.ply'
-# For R3D data: path to .r3d file (e.g., "r3d/sample.r3d")
+cache_path: 'sim_sample.pt'
+pointcloud_path: 'pointcloud_sim.ply'
 # For simulation data: path to directory containing rgb/, depth/, poses/, metadata.json
-dataset_path: "r3d/sample.r3d"
+# Example: "./data/scan_20231201_143022" (output from sim_manual_scan_env.py)
+dataset_path: "/home/yanjieze2/ywlin/scene-vla/data/scan_env/scan_20250617_012517"
 
 # devices for loading semantic memory, we have a device for fetching semantic memory 
 # and a device for running localization and path planning
@@ -45,13 +45,13 @@ memory_load_device: 'cuda'
 path_planning_device: 'cuda'
 
 # Data loading and labelling specs
-sample_freq: 3 # sample frames from record3D file with this fps
+sample_freq: 3 # sample frames from simulation data with this frequency
 threshold: 0.15 # owl-vit confidence threshold
-subsample_prob: 0.005 # sampling probability for raw points (usually we will have millions of points from record3D file)
+subsample_prob: 0.005 # sampling probability for raw points (usually we will have millions of points from simulation)
 
 # Debug purposes, visualize OWL-ViT results
 visualize_results: true
-visualization_path: "sample_debug"
+visualization_path: "simulation_debug"
 
 web_models:
   # OWL-ViT's config
@@ -66,6 +66,4 @@ web_models:
 #  - pepper
 
 # Or just comment it out for default labels.
-custom_labels: null
-
-
+custom_labels: null 
