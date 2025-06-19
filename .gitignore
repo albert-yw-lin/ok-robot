@@ -34,3 +34,5 @@ example_data
 # Data files
 *.r3d
 *.npy
+test/
+simulation_debug/

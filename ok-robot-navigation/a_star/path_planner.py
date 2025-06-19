@@ -72,15 +72,16 @@ class PathPlanner():
         occ_avoid_radius: float = 0.2,
         conservative: bool = True,
         heuristic: Heuristic = 'euclidean',
-        cache_dir = None
+        cache_dir = None,
+        data_type: str = 'r3d'
     ) -> None:
         self.occ_avoid_radius = occ_avoid_radius
         self.resolution = resolution
         self.occ_avoid = math.ceil((self.occ_avoid_radius) / self.resolution)
 
         # Gets the map from the parent class.
-        # for now we assume all dataset is r3d dataset, so key is set to 'r3d'
-        self.dataset = get_posed_rgbd_dataset(key='r3d', path = dataset_path)
+        # Support both r3d and simulation datasets
+        self.dataset = get_posed_rgbd_dataset(key=data_type, path=dataset_path)
         self.occupancy_map = get_occupancy_map_from_dataset(
             self.dataset,
             resolution,

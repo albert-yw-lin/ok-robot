@@ -43,7 +43,7 @@ from torch import Tensor
 from torch.utils.data.dataset import Dataset
 
 from a_star.dataset_class import PosedRGBDItem
-from a_star.dataset_class import R3DDataset
+from a_star.dataset_class import R3DDataset, SimulationDataset
 
 import open3d as o3d
 
@@ -52,10 +52,12 @@ def get_posed_rgbd_dataset(
     key: str,
     path: str
 ) -> Dataset[PosedRGBDItem]:
-    assert key == 'home_robot' or key == 'r3d'
-    # Currently we only support data from Record3D
+    assert key in ['home_robot', 'r3d', 'simulation'], f"Unsupported dataset key: {key}"
+    # Currently we support data from Record3D and simulation
     if key == "r3d":
         return R3DDataset(path)
+    elif key == "simulation":
+        return SimulationDataset(path)
 
 
 @dataclass(frozen=True)
